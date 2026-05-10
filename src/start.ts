@@ -25,8 +25,11 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  claudeCodeModel?: string
+  claudeCodeSmallModel?: string
 }
 
+// eslint-disable-next-line max-lines-per-function
 export async function runServer(options: RunServerOptions): Promise<void> {
   if (options.proxyEnv) {
     initProxyFromEnv()
@@ -68,22 +71,55 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   if (options.claudeCode) {
     invariant(state.models, "Models should be loaded by now")
+    const availableModelIds = state.models.data.map((model) => model.id)
 
-    const selectedModel = await consola.prompt(
-      "Select a model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
+    consola.info(
+      `[claude-code] CLI options received: claudeCodeModel=${JSON.stringify(options.claudeCodeModel)}, claudeCodeSmallModel=${JSON.stringify(options.claudeCodeSmallModel)}`,
+    )
+    consola.info(
+      `[claude-code] Available model ids: ${JSON.stringify(availableModelIds)}`,
     )
 
-    const selectedSmallModel = await consola.prompt(
-      "Select a small model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
+    const validateModel = (
+      value: string | undefined,
+      flag: string,
+    ): string | undefined => {
+      if (value === undefined) return undefined
+      if (!availableModelIds.includes(value)) {
+        consola.error(
+          `Model "${value}" provided via ${flag} is not available. Available models:\n${availableModelIds.map((id) => `- ${id}`).join("\n")}`,
+        )
+        throw new Error(`Invalid model for ${flag}: ${value}`)
+      }
+      return value
+    }
+
+    const preselectedModel = validateModel(
+      options.claudeCodeModel,
+      "--claude-code-model",
     )
+    const preselectedSmallModel = validateModel(
+      options.claudeCodeSmallModel,
+      "--claude-code-small-model",
+    )
+
+    consola.info(
+      `[claude-code] After validation: preselectedModel=${JSON.stringify(preselectedModel)}, preselectedSmallModel=${JSON.stringify(preselectedSmallModel)}`,
+    )
+
+    const selectedModel =
+      preselectedModel
+      ?? (await consola.prompt("Select a model to use with Claude Code", {
+        type: "select",
+        options: availableModelIds,
+      }))
+
+    const selectedSmallModel =
+      preselectedSmallModel
+      ?? (await consola.prompt("Select a small model to use with Claude Code", {
+        type: "select",
+        options: availableModelIds,
+      }))
 
     const command = generateEnvScript(
       {
@@ -174,6 +210,16 @@ export const start = defineCommand({
       description:
         "Generate a command to launch Claude Code with Copilot API config",
     },
+    "claude-code-model": {
+      type: "string",
+      description:
+        "Model to use with Claude Code (skips interactive selection). Requires --claude-code",
+    },
+    "claude-code-small-model": {
+      type: "string",
+      description:
+        "Small/fast model to use with Claude Code (skips interactive selection). Requires --claude-code",
+    },
     "show-token": {
       type: "boolean",
       default: false,
@@ -186,6 +232,13 @@ export const start = defineCommand({
     },
   },
   run({ args }) {
+    consola.info(
+      `[start.run] Raw citty args: ${JSON.stringify({
+        "claude-code": args["claude-code"],
+        "claude-code-model": args["claude-code-model"],
+        "claude-code-small-model": args["claude-code-small-model"],
+      })}`,
+    )
     const rateLimitRaw = args["rate-limit"]
     const rateLimit =
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -202,6 +255,8 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      claudeCodeModel: args["claude-code-model"],
+      claudeCodeSmallModel: args["claude-code-small-model"],
     })
   },
 })
