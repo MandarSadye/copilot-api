@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { bearerAuth } from "hono/bearer-auth"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
 
@@ -13,6 +14,21 @@ export const server = new Hono()
 
 server.use(logger())
 server.use(cors())
+
+// API key authentication — set COPILOT_API_KEY env var to enable
+const apiKey = process.env.COPILOT_API_KEY
+if (apiKey) {
+  server.use("*", async (c, next) => {
+    // Check x-api-key header first (Anthropic-style)
+    const xApiKey = c.req.header("x-api-key")
+    if (xApiKey === apiKey) {
+      return next()
+    }
+    // Fall back to Authorization: Bearer (OpenAI-style)
+    const auth = bearerAuth({ token: apiKey })
+    return auth(c, next)
+  })
+}
 
 server.get("/", (c) => c.text("Server running"))
 
