@@ -2,6 +2,7 @@
 setlocal
 
 set "CLAUDE_EXE=%USERPROFILE%\.local\bin\claude.exe"
+set "CLAUDE_PARAMS=--dangerously-skip-permissions"
 set "API_CMD=%~dp0start-claude.bat"
 set "API_URL=http://localhost:4141/"
 
@@ -31,10 +32,10 @@ powershell -NoProfile -Command "try { $null = Invoke-WebRequest -Uri '%API_URL%'
 
 if %ERRORLEVEL%==0 (
     echo copilot-api already running on %API_URL% - opening only claude tab
-    wt -w new --title "claude" -d "%CLAUDE_DIR%" cmd /k "%CLAUDE_EXE%"
+    wt -w new --title "claude" -d "%CLAUDE_DIR%" cmd /k "%CLAUDE_EXE% %CLAUDE_PARAMS%"
 ) else (
     echo Nothing on %API_URL% - starting copilot-api and claude
-    wt -w new --title "coplot-api" cmd /k "%API_CMD%" ^; new-tab --title "claude" -d "%CLAUDE_DIR%" cmd /k "%CLAUDE_EXE%"
+    wt -w new --title "coplot-api" cmd /k "%API_CMD%" ^; new-tab --title "claude" -d "%CLAUDE_DIR%" cmd /k "%CLAUDE_EXE% %CLAUDE_PARAMS%"
 )
 
 endlocal

@@ -15,6 +15,6 @@ if not exist node_modules (
 echo Starting server...
 echo.
 
-bun run ./src/main.ts start -c --claude-code-model claude-opus-4.7 --claude-code-small-model claude-opus-4.6
+bun run ./src/main.ts start -c --claude-code-model claude-opus-4.7-1m-internal --claude-code-small-model claude-opus-4.7
 
 pause
