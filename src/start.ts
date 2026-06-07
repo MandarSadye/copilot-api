@@ -117,6 +117,11 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   serve({
     fetch: server.fetch as ServerHandler,
     port: options.port,
+    // Bun's default idleTimeout is 10s, which kills SSE streams during the model's
+    // "thinking" pauses between message_start and the first content_block_delta.
+    // 255 is the maximum Bun allows (stored as uint8); Node ignores this field.
+    bun: { idleTimeout: 255 },
+    node: { keepAliveTimeout: 600_000 },
   })
 }
 
