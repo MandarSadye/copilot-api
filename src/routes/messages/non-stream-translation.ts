@@ -1,3 +1,6 @@
+import consola from "consola"
+
+import { state } from "~/lib/state"
 import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
@@ -42,17 +45,63 @@ export function translateToOpenAI(
     top_p: payload.top_p,
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
-    tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
+    tool_choice: translateAnthropicToolChoiceToOpenAI(
+      payload.tool_choice,
+      payload.thinking,
+      payload.model,
+    ),
   }
 }
 
 function translateModelName(model: string): string {
-  // Subagent requests use a specific model number which Copilot doesn't support
-  if (model.startsWith("claude-sonnet-4-")) {
-    return model.replace(/^claude-sonnet-4-.*/, "claude-sonnet-4")
-  } else if (model.startsWith("claude-opus-")) {
-    return model.replace(/^claude-opus-4-.*/, "claude-opus-4")
+  // Static aliases for Claude Code's hardcoded dated IDs (e.g. for builtin
+  // subagents like Explore/compaction). Maps to the canonical IDs Copilot
+  // actually serves.
+  const STATIC_ALIASES: Record<string, string> = {
+    "claude-haiku-4-5-20251001": "claude-haiku-4.5",
+    "claude-haiku-4-5": "claude-haiku-4.5",
+    "claude-opus-4-5-20250929": "claude-opus-4.5",
+    "claude-opus-4-6-20251015": "claude-opus-4.6",
+    "claude-opus-4-7-20251101": "claude-opus-4.7",
+    "claude-opus-4-8-20251201": "claude-opus-4.8",
+    "claude-sonnet-4-5-20251001": "claude-sonnet-4.5",
+    "claude-sonnet-4-6-20251015": "claude-sonnet-4.6",
   }
+
+  // Exact match in static alias table — return immediately
+  if (STATIC_ALIASES[model]) {
+    consola.info(
+      `[translateModelName] ${model} -> ${STATIC_ALIASES[model]} (alias)`,
+    )
+    return STATIC_ALIASES[model]
+  }
+
+  // If the model is already in the live catalog, pass through unchanged
+  const availableIds = state.models?.data.map((m) => m.id) ?? []
+  if (availableIds.includes(model)) {
+    return model
+  }
+
+  // Fallback: best-effort family match against the live catalog
+  // (e.g. "claude-opus-4-7-something" -> "claude-opus-4.7")
+  const familyMatch = /^claude-(opus|sonnet|haiku)-(\d)[.-](\d)/.exec(model)
+  if (familyMatch) {
+    const [, family, major, minor] = familyMatch
+    const candidate = `claude-${family}-${major}.${minor}`
+    if (availableIds.includes(candidate)) {
+      consola.info(
+        `[translateModelName] ${model} -> ${candidate} (family match)`,
+      )
+      return candidate
+    }
+  }
+
+  // Last resort: log a warning and pass through so the user can see the
+  // model_not_supported error and add an alias.
+  consola.warn(
+    `[translateModelName] no alias for "${model}". Passing through. `
+      + `Available: ${availableIds.join(", ")}`,
+  )
   return model
 }
 
@@ -246,19 +295,35 @@ function translateAnthropicToolsToOpenAI(
 
 function translateAnthropicToolChoiceToOpenAI(
   anthropicToolChoice: AnthropicMessagesPayload["tool_choice"],
+  thinking: AnthropicMessagesPayload["thinking"],
+  model: string,
 ): ChatCompletionsPayload["tool_choice"] {
   if (!anthropicToolChoice) {
     return undefined
   }
+
+  // Anthropic extended thinking is incompatible with forced tool use.
+  // Downgrade `any`/`tool` to `auto` to avoid upstream errors like
+  // "Thinking may not be enabled when tool_choice forces tool use."
+  //
+  // Treat thinking as enabled when the client requests it OR when the
+  // target model is a Claude model on Copilot, since Copilot enables
+  // thinking server-side for those models even when the OpenAI-format
+  // payload does not include a `thinking` field.
+  const thinkingEnabled =
+    thinking?.type === "enabled" || model.startsWith("claude-")
 
   switch (anthropicToolChoice.type) {
     case "auto": {
       return "auto"
     }
     case "any": {
-      return "required"
+      return thinkingEnabled ? "auto" : "required"
     }
     case "tool": {
+      if (thinkingEnabled) {
+        return "auto"
+      }
       if (anthropicToolChoice.name) {
         return {
           type: "function",
