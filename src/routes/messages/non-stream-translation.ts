@@ -117,7 +117,22 @@ function translateAnthropicMessagesToOpenAI(
     : handleAssistantMessage(message),
   )
 
-  return [...systemMessages, ...otherMessages]
+  const combined = [...systemMessages, ...otherMessages]
+
+  // Copilot's backend rejects a trailing "prefill" assistant message
+  // ("This model does not support assistant message prefill. The conversation
+  //  must end with a user message."). Anthropic clients (e.g. Claude Code) send
+  // a partial assistant turn to steer output, which Copilot can't honor. Strip
+  // trailing assistant messages so the request ends with a user/tool turn and
+  // succeeds — the model then generates freely instead of continuing the seed.
+  while (
+    combined.length > 0 &&
+    combined[combined.length - 1].role === "assistant"
+  ) {
+    combined.pop()
+  }
+
+  return combined
 }
 
 function handleSystemPrompt(
