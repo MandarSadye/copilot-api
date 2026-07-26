@@ -54,6 +54,16 @@ export function translateToOpenAI(
 }
 
 function translateModelName(model: string): string {
+  // Claude Code marks a 1M-context session by appending a literal "[1m]" to
+  // the model string (its `Sy()` check is a plain /\[1m\]/i regex). The tag is
+  // a client-side marker only — it must never reach Copilot, which would 404
+  // on the unknown id. Strip it before any lookup below.
+  if (/\[1m\]/i.test(model)) {
+    const stripped = model.replace(/\[1m\]/gi, "").trim()
+    consola.info(`[translateModelName] ${model} -> ${stripped} (1m tag)`)
+    model = stripped
+  }
+
   // Static aliases for Claude Code's hardcoded dated IDs (e.g. for builtin
   // subagents like Explore/compaction). Maps to the canonical IDs Copilot
   // actually serves.
@@ -117,22 +127,7 @@ function translateAnthropicMessagesToOpenAI(
     : handleAssistantMessage(message),
   )
 
-  const combined = [...systemMessages, ...otherMessages]
-
-  // Copilot's backend rejects a trailing "prefill" assistant message
-  // ("This model does not support assistant message prefill. The conversation
-  //  must end with a user message."). Anthropic clients (e.g. Claude Code) send
-  // a partial assistant turn to steer output, which Copilot can't honor. Strip
-  // trailing assistant messages so the request ends with a user/tool turn and
-  // succeeds — the model then generates freely instead of continuing the seed.
-  while (
-    combined.length > 0 &&
-    combined[combined.length - 1].role === "assistant"
-  ) {
-    combined.pop()
-  }
-
-  return combined
+  return [...systemMessages, ...otherMessages]
 }
 
 function handleSystemPrompt(

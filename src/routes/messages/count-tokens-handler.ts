@@ -19,8 +19,11 @@ export async function handleCountTokens(c: Context) {
 
     const openAIPayload = translateToOpenAI(anthropicPayload)
 
+    // Match on the translated id: translateToOpenAI has already stripped the
+    // "[1m]" marker and resolved aliases. Matching the raw anthropicPayload
+    // .model here would miss the catalog and silently return input_tokens: 1.
     const selectedModel = state.models?.data.find(
-      (model) => model.id === anthropicPayload.model,
+      (model) => model.id === openAIPayload.model,
     )
 
     if (!selectedModel) {

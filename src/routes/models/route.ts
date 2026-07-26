@@ -21,6 +21,13 @@ modelRoutes.get("/", async (c) => {
       created_at: new Date(0).toISOString(), // No date available from source
       owned_by: model.vendor,
       display_name: model.name,
+      capabilities: model.capabilities,
+      // Pass through upstream capability limits. Clients that negotiate
+      // context size (rather than using a baked-in model table) need these;
+      // dropping them silently made every model look like a default window.
+      context_window: model.capabilities?.limits?.max_context_window_tokens,
+      max_output_tokens: model.capabilities?.limits?.max_output_tokens,
+      max_prompt_tokens: model.capabilities?.limits?.max_prompt_tokens,
     }))
 
     return c.json({

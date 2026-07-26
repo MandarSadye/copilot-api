@@ -10,15 +10,17 @@ export const createChatCompletions = async (
 ) => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  const enableVision = payload.messages.some(
-    (x) =>
-      typeof x.content !== "string"
-      && x.content?.some((x) => x.type === "image_url"),
+  const sanitizedPayload = stripTrailingAssistantPrefills(payload)
+
+  const enableVision = sanitizedPayload.messages.some(
+    (message) =>
+      typeof message.content !== "string"
+      && message.content?.some((part) => part.type === "image_url"),
   )
 
   // Agent/user check for X-Initiator header
   // Determine if any message is from an agent ("assistant" or "tool")
-  const isAgentCall = payload.messages.some((msg) =>
+  const isAgentCall = sanitizedPayload.messages.some((msg) =>
     ["assistant", "tool"].includes(msg.role),
   )
 
@@ -31,7 +33,7 @@ export const createChatCompletions = async (
   const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(sanitizedPayload),
   })
 
   if (!response.ok) {
@@ -39,11 +41,35 @@ export const createChatCompletions = async (
     throw new HTTPError("Failed to create chat completions", response)
   }
 
-  if (payload.stream) {
+  if (sanitizedPayload.stream) {
     return events(response)
   }
 
   return (await response.json()) as ChatCompletionResponse
+}
+
+function stripTrailingAssistantPrefills(
+  payload: ChatCompletionsPayload,
+): ChatCompletionsPayload {
+  let messages = payload.messages
+
+  while (messages.length > 0) {
+    const finalMessage = messages[messages.length - 1]
+    if (finalMessage.role !== "assistant" || finalMessage.tool_calls?.length) {
+      break
+    }
+
+    // Copilot rejects assistant prefill requests; Anthropic-compatible clients
+    // can send them as a final assistant turn. Drop those prefills so the
+    // request ends with a user/tool turn instead of hard-failing upstream.
+    messages = messages.slice(0, -1)
+  }
+
+  if (messages === payload.messages) {
+    return payload
+  }
+
+  return { ...payload, messages }
 }
 
 // Streaming types

@@ -20,6 +20,13 @@ export async function handleCompletion(c: Context) {
   let payload = await c.req.json<ChatCompletionsPayload>()
   consola.debug("Request payload:", JSON.stringify(payload).slice(-400))
 
+  // Strip Claude Code's client-side "[1m]" 1M-context marker; Copilot would
+  // 404 on the tagged id. (The /v1/messages path does this in
+  // translateModelName; this route talks OpenAI-format directly.)
+  if (/\[1m\]/i.test(payload.model)) {
+    payload = { ...payload, model: payload.model.replace(/\[1m\]/gi, "").trim() }
+  }
+
   // Find the selected model
   const selectedModel = state.models?.data.find(
     (model) => model.id === payload.model,
